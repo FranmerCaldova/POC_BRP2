@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Notebook",
+    "displayName": "POC_NB_PUBLISH_REPORTING",
+    "description": "Small Spark adapter to publish prepared BRP2 ML outputs as schema-qualified Delta."
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "5fc515e2-36b9-9b12-4a30-db4b31ced48c"
+  }
+}

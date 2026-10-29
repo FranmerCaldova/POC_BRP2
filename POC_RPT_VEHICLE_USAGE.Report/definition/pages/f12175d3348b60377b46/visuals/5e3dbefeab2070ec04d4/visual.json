@@ -1,0 +1,179 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.14.0/schema.json",
+  "name": "5e3dbefeab2070ec04d4",
+  "position": {
+    "x": 547.088803088803,
+    "y": 0,
+    "z": 5,
+    "height": 132.1019305019305,
+    "width": 1341.034749034749,
+    "tabOrder": 4
+  },
+  "visual": {
+    "visualType": "cardVisual",
+    "query": {
+      "queryState": {
+        "Data": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Evaluation"
+                    }
+                  },
+                  "Property": "RMSE"
+                }
+              },
+              "queryRef": "Evaluation.RMSE",
+              "nativeQueryRef": "RMSE"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Evaluation"
+                    }
+                  },
+                  "Property": "Baseline MAE"
+                }
+              },
+              "queryRef": "Evaluation.Baseline MAE",
+              "nativeQueryRef": "Baseline MAE"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Evaluation"
+                    }
+                  },
+                  "Property": "MAE Improvement"
+                }
+              },
+              "queryRef": "Evaluation.MAE Improvement",
+              "nativeQueryRef": "MAE Improvement"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Evaluation"
+                    }
+                  },
+                  "Property": "Model MAE"
+                }
+              },
+              "queryRef": "Evaluation.Model MAE",
+              "nativeQueryRef": "Model MAE"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Evaluation"
+                    }
+                  },
+                  "Property": "Test Observations"
+                }
+              },
+              "queryRef": "Evaluation.Test Observations",
+              "nativeQueryRef": "Test Observations"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Measure": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "Evaluation"
+                  }
+                },
+                "Property": "RMSE"
+              }
+            },
+            "direction": "Descending"
+          }
+        ],
+        "isDefaultSort": true
+      }
+    },
+    "objects": {
+      "value": [
+        {
+          "properties": {
+            "labelPrecision": {
+              "expr": {
+                "Literal": {
+                  "Value": "2L"
+                }
+              }
+            },
+            "labelDisplayUnits": {
+              "expr": {
+                "Literal": {
+                  "Value": "0D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Evaluation.RMSE"
+          }
+        },
+        {
+          "properties": {
+            "labelPrecision": {
+              "expr": {
+                "Literal": {
+                  "Value": "2L"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Evaluation.Baseline MAE"
+          }
+        },
+        {
+          "properties": {
+            "labelPrecision": {
+              "expr": {
+                "Literal": {
+                  "Value": "2L"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Evaluation.MAE Improvement"
+          }
+        },
+        {
+          "properties": {
+            "labelPrecision": {
+              "expr": {
+                "Literal": {
+                  "Value": "2L"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "Evaluation.Model MAE"
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

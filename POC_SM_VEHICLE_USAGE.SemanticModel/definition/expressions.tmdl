@@ -1,0 +1,6 @@
+expression 'Direct Lake BRP2' =
+		let
+		    Source = AzureStorage.DataLake("https://onelake.dfs.fabric.microsoft.com/f78fd47f-e385-4179-b31a-5e376322c392/fbb63bb5-9be9-413e-98f8-5483d1552137", [HierarchicalNavigation=true])
+		in
+		    Source
+

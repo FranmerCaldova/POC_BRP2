@@ -1,0 +1,81 @@
+/// Schema-qualified POC_reporting.POC_evaluation; one validated publication.
+table Evaluation
+
+	/// Root mean squared error in kilometres.
+	measure RMSE = SQRT(AVERAGE('Evaluation'[Squared Error]))
+		formatString: #,##0" km"
+
+	/// Vehicle-disjoint later-period holdout observations.
+	measure 'Test Observations' = COUNTROWS('Evaluation')
+		formatString: #,##0
+
+	/// Mean absolute error; lower is better.
+	measure 'Model MAE' = AVERAGE('Evaluation'[Absolute Error])
+		formatString: #,##0" km"
+
+	/// Absolute error of the global training median on the same selected test observations.
+	measure 'Baseline MAE' = AVERAGE('Evaluation'[Baseline Error])
+		formatString: #,##0" km"
+
+	/// Relative reduction in MAE, recomputed for selected observations; BLANK without supported baseline.
+	measure 'MAE Improvement' =
+			VAR _baseline = [Baseline MAE]
+			RETURN DIVIDE(_baseline - [Model MAE], _baseline)
+		formatString: 0.0%
+
+	column 'Segment Key'
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: segment_key
+
+	column 'Publication Key'
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: publication_key
+
+	column 'Measurement Date'
+		dataType: dateTime
+		isHidden
+		formatString: yyyy-MM-dd
+		summarizeBy: none
+		sourceColumn: measurement_date
+
+	column 'Absolute Error'
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: absolute_error
+
+	column 'Squared Error'
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: squared_error
+
+	column 'Baseline Error'
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: baseline_absolute_error
+
+	column 'Absolute Error Band'
+		dataType: string
+		summarizeBy: none
+		sourceColumn: error_band
+		sortByColumn: 'Band Order'
+
+	column 'Band Order'
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: error_band_order
+
+	partition Evaluation = entity
+		mode: directLake
+		source
+			entityName: poc_evaluation
+			schemaName: POC_reporting
+			expressionSource: 'Direct Lake BRP2'
+

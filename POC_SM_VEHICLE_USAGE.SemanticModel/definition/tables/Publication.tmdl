@@ -1,0 +1,49 @@
+/// Schema-qualified POC_reporting.POC_publication; one validated publication.
+table Publication
+
+	/// Registered ML model version feeding this reporting publication.
+	measure 'Published Version' =
+			VAR _version = CALCULATE(SELECTEDVALUE('Publication'[Model Version]), KEEPFILTERS(NOT ISBLANK('Publication'[Publication Key])))
+			RETURN IF(NOT ISBLANK(_version), "MODEL v" & _version)
+		formatString: @
+
+	/// Fixed source snapshot, not last execution time.
+	measure 'Source Snapshot' =
+			VAR _date = CALCULATE(SELECTEDVALUE('Publication'[Snapshot]), KEEPFILTERS(NOT ISBLANK('Publication'[Publication Key])))
+			RETURN IF(NOT ISBLANK(_date), "SNAPSHOT " & _date)
+		formatString: @
+
+	column 'Publication Key'
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: publication_key
+
+	column 'ML Run'
+		dataType: string
+		summarizeBy: none
+		sourceColumn: source_run_id
+
+	column 'Reporting Run'
+		dataType: string
+		isHidden
+		summarizeBy: none
+		sourceColumn: report_run_id
+
+	column 'Model Version'
+		dataType: string
+		summarizeBy: none
+		sourceColumn: model_version
+
+	column Snapshot
+		dataType: string
+		summarizeBy: none
+		sourceColumn: snapshot_date
+
+	partition Publication = entity
+		mode: directLake
+		source
+			entityName: poc_publication
+			schemaName: POC_reporting
+			expressionSource: 'Direct Lake BRP2'
+

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "POC_SM_VEHICLE_USAGE",
+    "description": "BRP2 mileage estimates and independent holdout; explicit weighted error measures."
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "34509949-6168-9b8c-460c-8521df787d88"
+  }
+}

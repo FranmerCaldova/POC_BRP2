@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Lakehouse",
+    "displayName": "POC_LH_VEHICLE_USAGE_GOLD",
+    "description": "BRP2 mileage demonstration - GOLD layer"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "d1552137-5483-98f8-413e-9be9fbb63bb5"
+  }
+}

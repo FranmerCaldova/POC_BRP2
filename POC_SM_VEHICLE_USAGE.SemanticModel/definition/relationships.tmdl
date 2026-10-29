@@ -1,0 +1,28 @@
+relationship POC_Predictions_Segment
+	fromColumn: Predictions.'Segment Key'
+	toColumn: Segment.'Segment Key'
+
+relationship POC_Predictions_Publication
+	fromColumn: Predictions.'Publication Key'
+	toColumn: Publication.'Publication Key'
+
+relationship POC_Evaluation_Segment
+	fromColumn: Evaluation.'Segment Key'
+	toColumn: Segment.'Segment Key'
+
+relationship POC_Evaluation_Publication
+	fromColumn: Evaluation.'Publication Key'
+	toColumn: Publication.'Publication Key'
+
+relationship POC_Quality_Publication
+	fromColumn: Quality.'Publication Key'
+	toColumn: Publication.'Publication Key'
+
+relationship POC_Predictions_Calendar
+	fromColumn: Predictions.'Measurement Date'
+	toColumn: Calendar.Date
+
+relationship POC_Evaluation_Calendar
+	fromColumn: Evaluation.'Measurement Date'
+	toColumn: Calendar.Date
+

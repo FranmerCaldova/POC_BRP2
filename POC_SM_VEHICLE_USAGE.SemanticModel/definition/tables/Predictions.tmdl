@@ -1,0 +1,55 @@
+/// Schema-qualified POC_reporting.POC_predictions; one validated publication.
+table Predictions
+
+	/// One latest prediction per sampled vehicle; not the independent test.
+	measure Vehicles = COUNTROWS('Predictions')
+		formatString: #,##0
+
+	/// Average estimated cumulative mileage at each vehicle's measurement date.
+	measure 'Average Estimated Mileage' = AVERAGE('Predictions'[Estimated km])
+		formatString: #,##0" km"
+
+	column 'Segment Key'
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: segment_key
+
+	column 'Publication Key'
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: publication_key
+
+	column 'Measurement Date'
+		dataType: dateTime
+		isHidden
+		formatString: yyyy-MM-dd
+		summarizeBy: none
+		sourceColumn: measurement_date
+
+	column 'Estimated km'
+		dataType: double
+		isHidden
+		summarizeBy: none
+		sourceColumn: predicted_km
+
+	column 'Mileage Band'
+		dataType: string
+		summarizeBy: none
+		sourceColumn: mileage_band
+		sortByColumn: 'Band Order'
+
+	column 'Band Order'
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: mileage_band_order
+
+	partition Predictions = entity
+		mode: directLake
+		source
+			entityName: poc_predictions
+			schemaName: POC_reporting
+			expressionSource: 'Direct Lake BRP2'
+

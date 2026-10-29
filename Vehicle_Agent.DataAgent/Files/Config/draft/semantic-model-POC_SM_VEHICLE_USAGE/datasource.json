@@ -1,0 +1,273 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/dataAgent/definition/dataSource/1.0.0/schema.json",
+  "artifactId": "34509949-6168-9b8c-460c-8521df787d88",
+  "workspaceId": "00000000-0000-0000-0000-000000000000",
+  "dataSourceInstructions": "Use explicit semantic measures. Predictions are not the independent holdout. Evaluation measures must be recalculated in context, never averaged across segment means. Quality checks are global and nonadditive. Use publication version and snapshot; never hardcode demonstration metrics.",
+  "displayName": "POC_SM_VEHICLE_USAGE",
+  "type": "semantic_model",
+  "userDescription": "BRP2 reporting semantic model: vehicle mileage estimates, independent holdout evaluation, global quality and publication provenance. Same business source as the Power BI report.",
+  "metadata": null,
+  "elements": [
+    {
+      "id": "Predictions",
+      "is_selected": true,
+      "display_name": "Predictions",
+      "type": "semantic_model.table",
+      "description": "Schema-qualified POC_reporting.POC_predictions; one validated publication.",
+      "children": [
+        {
+          "id": "Mileage_Band",
+          "is_selected": true,
+          "display_name": "Mileage Band",
+          "type": "semantic_model.column",
+          "data_type": "String",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "Vehicles",
+          "is_selected": true,
+          "display_name": "Vehicles",
+          "type": "semantic_model.measure",
+          "data_type": "Int64",
+          "description": "One latest prediction per sampled vehicle; not the independent test.",
+          "children": []
+        },
+        {
+          "id": "Average_Estimated_Mileage",
+          "is_selected": true,
+          "display_name": "Average Estimated Mileage",
+          "type": "semantic_model.measure",
+          "data_type": "Double",
+          "description": "Average estimated cumulative mileage at each vehicle's measurement date.",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Evaluation",
+      "is_selected": true,
+      "display_name": "Evaluation",
+      "type": "semantic_model.table",
+      "description": "Schema-qualified POC_reporting.POC_evaluation; one validated publication.",
+      "children": [
+        {
+          "id": "Absolute_Error_Band",
+          "is_selected": true,
+          "display_name": "Absolute Error Band",
+          "type": "semantic_model.column",
+          "data_type": "String",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "RMSE",
+          "is_selected": true,
+          "display_name": "RMSE",
+          "type": "semantic_model.measure",
+          "data_type": "Double",
+          "description": "Root mean squared error in kilometres.",
+          "children": []
+        },
+        {
+          "id": "Test_Observations",
+          "is_selected": true,
+          "display_name": "Test Observations",
+          "type": "semantic_model.measure",
+          "data_type": "Int64",
+          "description": "Vehicle-disjoint later-period holdout observations.",
+          "children": []
+        },
+        {
+          "id": "Model_MAE",
+          "is_selected": true,
+          "display_name": "Model MAE",
+          "type": "semantic_model.measure",
+          "data_type": "Double",
+          "description": "Mean absolute error; lower is better.",
+          "children": []
+        },
+        {
+          "id": "Baseline_MAE",
+          "is_selected": true,
+          "display_name": "Baseline MAE",
+          "type": "semantic_model.measure",
+          "data_type": "Double",
+          "description": "Absolute error of the global training median on the same selected test observations.",
+          "children": []
+        },
+        {
+          "id": "MAE_Improvement",
+          "is_selected": true,
+          "display_name": "MAE Improvement",
+          "type": "semantic_model.measure",
+          "data_type": "Double",
+          "description": "Relative reduction in MAE, recomputed for selected observations; BLANK without supported baseline.",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Segment",
+      "is_selected": true,
+      "display_name": "Segment",
+      "type": "semantic_model.table",
+      "description": "Schema-qualified POC_reporting.POC_segments; one validated publication.",
+      "children": [
+        {
+          "id": "Product_Line",
+          "is_selected": true,
+          "display_name": "Product Line",
+          "type": "semantic_model.column",
+          "data_type": "String",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "Model_Year",
+          "is_selected": true,
+          "display_name": "Model Year",
+          "type": "semantic_model.column",
+          "data_type": "Int64",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "Region",
+          "is_selected": true,
+          "display_name": "Region",
+          "type": "semantic_model.column",
+          "data_type": "String",
+          "description": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Publication",
+      "is_selected": true,
+      "display_name": "Publication",
+      "type": "semantic_model.table",
+      "description": "Schema-qualified POC_reporting.POC_publication; one validated publication.",
+      "children": [
+        {
+          "id": "ML_Run",
+          "is_selected": true,
+          "display_name": "ML Run",
+          "type": "semantic_model.column",
+          "data_type": "String",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "Model_Version",
+          "is_selected": true,
+          "display_name": "Model Version",
+          "type": "semantic_model.column",
+          "data_type": "String",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "Snapshot",
+          "is_selected": true,
+          "display_name": "Snapshot",
+          "type": "semantic_model.column",
+          "data_type": "String",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "Published_Version",
+          "is_selected": true,
+          "display_name": "Published Version",
+          "type": "semantic_model.measure",
+          "data_type": "String",
+          "description": "Registered ML model version feeding this reporting publication.",
+          "children": []
+        },
+        {
+          "id": "Source_Snapshot",
+          "is_selected": true,
+          "display_name": "Source Snapshot",
+          "type": "semantic_model.measure",
+          "data_type": "String",
+          "description": "Fixed source snapshot, not last execution time.",
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Calendar",
+      "is_selected": true,
+      "display_name": "Calendar",
+      "type": "semantic_model.table",
+      "description": "Schema-qualified POC_reporting.POC_calendar; one validated publication.",
+      "children": [
+        {
+          "id": "Date",
+          "is_selected": true,
+          "display_name": "Date",
+          "type": "semantic_model.column",
+          "data_type": "DateTime",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "Year",
+          "is_selected": true,
+          "display_name": "Year",
+          "type": "semantic_model.column",
+          "data_type": "Int64",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "Month",
+          "is_selected": true,
+          "display_name": "Month",
+          "type": "semantic_model.column",
+          "data_type": "Int64",
+          "description": null,
+          "children": []
+        }
+      ]
+    },
+    {
+      "id": "Quality",
+      "is_selected": true,
+      "display_name": "Quality",
+      "type": "semantic_model.table",
+      "description": "Schema-qualified POC_reporting.POC_quality; one validated publication.",
+      "children": [
+        {
+          "id": "Check",
+          "is_selected": true,
+          "display_name": "Check",
+          "type": "semantic_model.column",
+          "data_type": "String",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "Scope",
+          "is_selected": true,
+          "display_name": "Scope",
+          "type": "semantic_model.column",
+          "data_type": "String",
+          "description": null,
+          "children": []
+        },
+        {
+          "id": "Count",
+          "is_selected": true,
+          "display_name": "Count",
+          "type": "semantic_model.measure",
+          "data_type": "Int64",
+          "description": "Global preparation count for one named check. BLANK for mixed nonadditive checks.",
+          "children": []
+        }
+      ]
+    }
+  ]
+}

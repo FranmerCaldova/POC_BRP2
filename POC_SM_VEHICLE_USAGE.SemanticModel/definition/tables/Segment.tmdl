@@ -1,0 +1,31 @@
+/// Schema-qualified POC_reporting.POC_segments; one validated publication.
+table Segment
+
+	column 'Segment Key'
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: segment_key
+
+	column 'Product Line'
+		dataType: string
+		summarizeBy: none
+		sourceColumn: product_line
+
+	column 'Model Year'
+		dataType: int64
+		summarizeBy: none
+		sourceColumn: model_year
+
+	column Region
+		dataType: string
+		summarizeBy: none
+		sourceColumn: region
+
+	partition Segment = entity
+		mode: directLake
+		source
+			entityName: poc_segments
+			schemaName: POC_reporting
+			expressionSource: 'Direct Lake BRP2'
+

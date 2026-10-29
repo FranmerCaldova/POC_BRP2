@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "POC_RPT_VEHICLE_USAGE",
+    "description": "BRP2 mileage estimation: explore predictions and inspect independent test reliability."
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "e7af8264-2cb1-99a7-49b4-0a40913a9451"
+  }
+}

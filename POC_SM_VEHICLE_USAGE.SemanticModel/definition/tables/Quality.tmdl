@@ -1,0 +1,43 @@
+/// Schema-qualified POC_reporting.POC_quality; one validated publication.
+table Quality
+
+	/// Global preparation count for one named check. BLANK for mixed nonadditive checks.
+	measure Count = SELECTEDVALUE('Quality'[Check Value])
+		formatString: #,##0
+
+	column 'Check Order'
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: check_order
+
+	column Check
+		dataType: string
+		summarizeBy: none
+		sourceColumn: check_name
+		sortByColumn: 'Check Order'
+
+	column 'Check Value'
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: row_count
+
+	column Scope
+		dataType: string
+		summarizeBy: none
+		sourceColumn: scope
+
+	column 'Publication Key'
+		dataType: int64
+		isHidden
+		summarizeBy: none
+		sourceColumn: publication_key
+
+	partition Quality = entity
+		mode: directLake
+		source
+			entityName: poc_quality
+			schemaName: POC_reporting
+			expressionSource: 'Direct Lake BRP2'
+

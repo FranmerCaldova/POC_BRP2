@@ -1,0 +1,150 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.14.0/schema.json",
+  "name": "f36bf0c62555c0330b71",
+  "position": {
+    "x": 9.3405405405405411,
+    "y": 166.79536679536679,
+    "z": 0,
+    "height": 837.97992277992284,
+    "width": 1910.8077220077221,
+    "tabOrder": 0
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Calendar"
+                    }
+                  },
+                  "Property": "Date"
+                }
+              },
+              "queryRef": "Calendar.Date",
+              "nativeQueryRef": "Date"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Evaluation"
+                    }
+                  },
+                  "Property": "Baseline MAE"
+                }
+              },
+              "queryRef": "Evaluation.Baseline MAE",
+              "nativeQueryRef": "Baseline MAE"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Evaluation"
+                    }
+                  },
+                  "Property": "MAE Improvement"
+                }
+              },
+              "queryRef": "Evaluation.MAE Improvement",
+              "nativeQueryRef": "MAE Improvement"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Evaluation"
+                    }
+                  },
+                  "Property": "Model MAE"
+                }
+              },
+              "queryRef": "Evaluation.Model MAE",
+              "nativeQueryRef": "Model MAE"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Evaluation"
+                    }
+                  },
+                  "Property": "RMSE"
+                }
+              },
+              "queryRef": "Evaluation.RMSE",
+              "nativeQueryRef": "RMSE"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Evaluation"
+                    }
+                  },
+                  "Property": "Test Observations"
+                }
+              },
+              "queryRef": "Evaluation.Test Observations",
+              "nativeQueryRef": "Test Observations"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Segment"
+                    }
+                  },
+                  "Property": "Model Year"
+                }
+              },
+              "queryRef": "Segment.Model Year",
+              "nativeQueryRef": "Model Year"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Segment"
+                    }
+                  },
+                  "Property": "Product Line"
+                }
+              },
+              "queryRef": "Segment.Product Line",
+              "nativeQueryRef": "Product Line"
+            },
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Segment"
+                    }
+                  },
+                  "Property": "Region"
+                }
+              },
+              "queryRef": "Segment.Region",
+              "nativeQueryRef": "Region"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

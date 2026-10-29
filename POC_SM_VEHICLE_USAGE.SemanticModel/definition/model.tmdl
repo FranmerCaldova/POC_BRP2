@@ -1,0 +1,14 @@
+model Model
+	defaultMode: directLake
+	culture: fr-FR
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	discourageImplicitMeasures
+	sourceQueryCulture: fr-FR
+
+ref table Predictions
+ref table Evaluation
+ref table Segment
+ref table Publication
+ref table Calendar
+ref table Quality
+

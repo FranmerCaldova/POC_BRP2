@@ -6,5 +6,11 @@
     "bronze": "BRP_RAW",
     "silver": "BRP_CLEAN",
     "gold": "BRP_RESULTS"
+  },
+  "notebook_parameters": {
+    "run_prefix": "demo01",
+    "snapshot_date": "2026-08-28",
+    "experiment_name": "BRP_MILEAGE_EXPERIMENT",
+    "model_name": "BRP_MILEAGE_MODEL"
   }
 }

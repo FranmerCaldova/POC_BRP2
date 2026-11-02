@@ -5,8 +5,8 @@ Fabric proof of concept for cumulative vehicle mileage estimation, not failure p
 ## Prompt deployment: step 1 bootstrap
 
 The standard-library Python orchestrator in [deployment/deploy.py](deployment/deploy.py)
-implements **only workspace/lakehouse planning and bootstrap**, not the complete
-solution deployment. Python 3.10+ and an authenticated Azure CLI are required;
+implements **workspace/lakehouse bootstrap and notebook import**, not the complete
+solution deployment. The default stage is `bootstrap`. Python 3.10+ and an authenticated Azure CLI are required;
 there are no additional Python dependencies for this command.
 
 1. Copy [deployment/target.example.json](deployment/target.example.json) to
@@ -62,11 +62,71 @@ to the official HTTPS v1 endpoint, including pagination and operation polling.
 For prompt-driven use, the agent should map the user's requested names into
 configuration, invoke `plan`, summarize it, and stop for approval before `apply`.
 Do not treat an instruction in a prompt as proof that a complete BRP deployment
-is implemented. Notebook/dependency remapping and end-to-end execution are later steps.
+is implemented. Notebook import is the next stage below; data, execution and
+downstream reporting deployment remain later steps.
 
 API references:
 [Create workspace](https://learn.microsoft.com/en-us/rest/api/fabric/core/workspaces/create-workspace),
 [Create lakehouse](https://learn.microsoft.com/en-us/rest/api/fabric/lakehouse/items/create-lakehouse).
+
+## Step 2: import notebooks without execution
+
+After bootstrap, add the resolved `workspace_id` to local configuration.
+All three lakehouses must exist with schema support on the selected capacity.
+Set `notebook_parameters` as shown in the example, with a fresh `run_prefix`.
+The generated run IDs are `silver_<prefix>`, `train_<prefix>` and `report_<prefix>`.
+This makes the Silver -> training -> reporting -> publisher handoff explicit.
+Import itself does not reserve run folders; use a new prefix for a new execution.
+
+Generate and review a notebook-only plan:
+
+```powershell
+python -B .\deployment\deploy.py plan --stage notebooks --config .\.deployment\target.json --plan .\.deployment\notebooks-plan.json
+```
+
+After approval of that plan:
+
+```powershell
+python -B .\deployment\deploy.py apply --stage notebooks --config .\.deployment\target.json --plan .\.deployment\notebooks-plan.json --approve "<approval_id>" --journal .\.deployment\notebooks-01.json
+```
+
+The stage imports exactly the three checked-in notebook sources using
+`fabricGitSource` definitions. It renders target-specific copies in memory:
+source files and source item identities (`.platform`) are not copied/modified.
+Each notebook receives its target workspace/lakehouse IDs, lakehouse names,
+default and known lakehouse bindings, and consistent run IDs in the parameter
+cell. PySpark and Python 3.12 kernels, configure magic, parameter-cell markers,
+feature engineering and model logic are preserved.
+
+Optional overrides in `notebook_parameters` are `snapshot_date`,
+`source_directory`, `silver_directory`, `results_directory`, `errors_directory`,
+`silver_schema`, `reporting_schema`, `experiment_name`, and `model_name`.
+Unspecified values retain checked-in defaults. `run_prefix` is required;
+arbitrary Python expressions and arbitrary parameter keys are rejected.
+ML is imported with `mode="train"` and `demo_run_id="train_<prefix>"`.
+For later reporting execution, override `mode="reporting"` and
+`demo_run_id="report_<prefix>"`; its `report_source_run_id` already points
+to the training run. No model or experiment is created by importing definitions.
+
+The plan binds approval to source hashes, generated parameters, dependencies and
+the current target state. After import, definitions are retrieved from Fabric
+and compared by Python AST, cell sequence/type, configure magic, Markdown,
+kernel and lakehouse bindings. Harmless quote/newline formatting is ignored.
+Existing semantically matching notebooks are reused; a different definition or
+item-type/name collision is rejected, never overwritten. Replan after any
+source/configuration change. Partial imports are journaled for safe recovery.
+
+Notebook discovery uses the **read-only POST `getDefinition`** API, which can
+return an asynchronous operation; bootstrap discovery still uses GET only.
+When Fabric returns a regional operation Location, the orchestrator uses the
+validated `x-ms-operation-id` to poll the public Fabric API instead; it does not
+forward credentials to the regional host.
+Neither stage invokes notebook execution/job endpoints. Notebook execution,
+source-data transfer, ML training, semantic models, reports and Data Agents are
+not implemented by this stage and are not validated merely by successful import.
+
+API reference:
+[Notebook definitions](https://learn.microsoft.com/en-us/rest/api/fabric/articles/item-management/definitions/notebook-definition).
 
 ## Parameterized notebook deployment
 
@@ -143,10 +203,10 @@ identity checks remain mandatory.
 > publish only after approval of the overwrite plan. Do not modify BRP2.
 > Report the resolved IDs, run IDs, model version and validation results.
 
-This is a contract for a deployment agent, not an implemented deployment command.
-These changes only parameterize the notebooks. The agent must separately remap
-semantic-model connections, report bindings and Data Agent sources; these files
-have not been changed.
+This full-scenario contract is not yet a complete deployment command. Bootstrap
+and notebook import are implemented above. The agent must separately implement
+data transfer/execution and remap semantic-model connections, report bindings
+and Data Agent sources; those definitions have not been changed.
 
 ### Writes and reruns
 

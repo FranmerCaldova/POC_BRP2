@@ -249,6 +249,39 @@ class TransportTest(unittest.TestCase):
             self.assertEqual(client.create("/workspaces", {}), {"id": WORKSPACE})
             self.assertEqual(request.call_args.args, ("GET", deploy.API + "/operations/op/result"))
 
+    def test_definition_retrieval_handles_immediate_and_async_responses(self):
+        client = deploy.FabricClient(TENANT)
+        expected = {"parts": []}
+        with patch.object(client, "request", return_value=(200, {}, {"definition": expected})) as request:
+            self.assertEqual(client.definition(WORKSPACE, LAKES["bronze"]), expected)
+            self.assertEqual(request.call_args.args, (
+                "POST", f"/workspaces/{WORKSPACE}/notebooks/{LAKES['bronze']}/getDefinition?format=fabricGitSource", None,
+            ))
+        with patch.object(client, "request", side_effect=[
+            (202, {"Location": deploy.API + "/operations/definition"}, {}),
+            (200, {}, {"status": "Succeeded"}), (200, {}, {"definition": expected}),
+        ]), patch.object(deploy.time, "sleep"):
+            self.assertEqual(client.definition(WORKSPACE, LAKES["bronze"]), expected)
+
+    def test_regional_operation_location_is_polled_via_public_api(self):
+        client = deploy.FabricClient(TENANT)
+        operation_id = "88888888-8888-4888-8888-888888888888"
+        with patch.object(client, "request", side_effect=[
+            (202, {
+                "Location": f"https://wabi-region.analysis.windows.net/v1/operations/{operation_id}",
+                "x-ms-operation-id": operation_id,
+            }, None),
+            (200, {}, {"status": "Succeeded"}), (200, {}, {"id": WORKSPACE}),
+        ]) as request, patch.object(deploy.time, "sleep"):
+            self.assertEqual(client.create("/workspaces", {}), {"id": WORKSPACE})
+            self.assertEqual(request.call_args_list[1].args, ("GET", deploy.API + f"/operations/{operation_id}"))
+            self.assertEqual(request.call_args_list[2].args, ("GET", deploy.API + f"/operations/{operation_id}/result"))
+        with patch.object(client, "request", return_value=(202, {
+            "Location": "https://evil.example/operation", "x-ms-operation-id": "../workspaces",
+        }, None)):
+            with self.assertRaises(deploy.DeploymentError):
+                client.create("/workspaces", {})
+
     def test_async_failed_missing_location_and_timeout_are_errors(self):
         for responses in [
             [(202, {}, {})],
@@ -275,5 +308,184 @@ class TransportTest(unittest.TestCase):
         self.assertNotIn("sensitive body", str(raised.exception))
 
 
+class FakeNotebookFabric(FakeFabric):
+    def __init__(self):
+        super().__init__()
+        self.workspaces = [{"id": WORKSPACE, "displayName": "BRP_PROMPT_TEST"}]
+        self.items = [
+            {"id": value, "displayName": f"BRP_{role.upper()}", "type": "Lakehouse"}
+            for role, value in LAKES.items()
+        ]
+        self.definitions = {}
+
+    def definition(self, workspace_id, notebook_id):
+        if workspace_id != WORKSPACE:
+            raise AssertionError(workspace_id)
+        return self.definitions[notebook_id]
+
+    def create(self, path, body):
+        if path != f"/workspaces/{WORKSPACE}/notebooks":
+            raise AssertionError(path)
+        self.posts.append((path, body))
+        notebook_id = f"77777777-7777-4777-8777-{len(self.posts):012d}"
+        self.definitions[notebook_id] = body["definition"]
+        item = {"id": notebook_id, "displayName": body["displayName"], "type": "Notebook"}
+        self.items.append(item)
+        return item
+
+
+class NotebookDeploymentTest(unittest.TestCase):
+    def setUp(self):
+        self.client = FakeNotebookFabric()
+        self.config = {
+            "tenant_id": TENANT, "capacity_id": CAPACITY, "workspace_name": "BRP_PROMPT_TEST",
+            "workspace_id": WORKSPACE,
+            "lakehouses": {role: f"BRP_{role.upper()}" for role in LAKES},
+            "notebook_parameters": {
+                "run_prefix": "target01", "snapshot_date": "2026-08-28",
+                "experiment_name": "Target_Experiment", "model_name": "Target_Model",
+                "source_directory": "target/input", "silver_directory": "target/silver",
+                "results_directory": "target/results", "errors_directory": "target/errors",
+                "silver_schema": "TargetSilver", "reporting_schema": "TargetReporting",
+            },
+        }
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = Path(self.temporary.name)
+
+    def test_invalid_notebook_options_rejected(self):
+        for changes in [
+            {"run_prefix": "../invalid"}, {"model_name": ""}, {"snapshot_date": "2026-02-30"},
+            {"snapshot_date": "20260828"}, {"results_directory": "/absolute"},
+            {"silver_schema": "bad`identifier"}, {"mode": "train"},
+            {"errors_directory": "target/results/errors"}, {"model_name": 10},
+        ]:
+            with self.subTest(changes=changes), self.assertRaises(deploy.DeploymentError):
+                deploy.validate_notebook_parameters(dict(self.config["notebook_parameters"], **changes))
+
+    def test_plan_requires_bootstrap_and_run_prefix(self):
+        self.client.items = []
+        with self.assertRaisesRegex(deploy.DeploymentError, "Bootstrap"):
+            deploy.build_notebook_plan(self.client, self.config)
+        self.client = FakeNotebookFabric()
+        self.config.pop("notebook_parameters")
+        with self.assertRaisesRegex(deploy.DeploymentError, "run_prefix"):
+            deploy.build_notebook_plan(self.client, self.config)
+
+    def test_notebook_rendering_remaps_dependencies_and_parameter_cells(self):
+        resources = deploy.build_plan(self.client, self.config)
+        for name, roles in deploy.NOTEBOOKS.items():
+            path = ROOT / f"{name}.Notebook" / "notebook-content.py"
+            original = path.read_text(encoding="utf-8-sig")
+            source, details = deploy.render_notebook(name, self.config, resources)
+            _, meta = deploy.notebook_metadata(source)
+            _, original_meta = deploy.notebook_metadata(original)
+            self.assertEqual(meta["kernel_info"], original_meta["kernel_info"])
+            lake = meta["dependencies"]["lakehouse"]
+            self.assertEqual(lake["default_lakehouse"], LAKES[roles[0]])
+            self.assertEqual(lake["default_lakehouse_workspace_id"], WORKSPACE)
+            self.assertEqual({value["id"] for value in lake["known_lakehouses"]}, {LAKES[role] for role in roles})
+            _, _, params = deploy.notebook_parameters(source)
+            self.assertEqual(params, details["parameters"])
+            self.assertEqual(params["medallion_workspace_id"], WORKSPACE)
+            self.assertNotIn(deploy.PROTECTED_WORKSPACE, source)
+            for old in original_meta["dependencies"]["lakehouse"].get("known_lakehouses", []):
+                self.assertNotIn(old["id"], source)
+            self.assertEqual(path.read_text(encoding="utf-8-sig"), original)
+            self.assertEqual(deploy.digest(deploy.notebook_signature(source)), details["definition_sha256"])
+            compile(source, name, "exec")
+            if name == "POC_NB_VEHICLE_USAGE":
+                self.assertEqual(params["demo_run_id"], "train_target01")
+                self.assertEqual(params["report_source_run_id"], "train_target01")
+                self.assertEqual(params["silver_run_id"], "silver_target01")
+                self.assertEqual(params["experiment_name"], "Target_Experiment")
+                self.assertEqual(params["mode"], "train")
+                self.assertIn('# MAGIC {"numCores": 2}', source)
+            if name == "POC_NB_PUBLISH_REPORTING":
+                self.assertEqual(params["report_run_id"], "report_target01")
+
+    def test_plan_apply_and_reuse_without_execution(self):
+        plan = deploy.build_notebook_plan(self.client, self.config)
+        self.assertEqual(plan["scope"], "notebook-import-only")
+        self.assertEqual(len(plan["notebooks"]), 3)
+        self.assertEqual(self.client.posts, [])
+        journal = deploy.apply_plan(
+            self.client, self.config, plan, plan["approval_id"], self.directory / "journal.json", "notebooks",
+        )
+        self.assertEqual(journal["status"], "succeeded")
+        self.assertEqual(len(journal["notebooks"]), 3)
+        self.assertTrue(all(item["verified"] for item in journal["notebooks"].values()))
+        self.assertEqual(len(self.client.posts), 3)
+        for path, body in self.client.posts:
+            self.assertEqual(path, f"/workspaces/{WORKSPACE}/notebooks")
+            self.assertEqual(body["definition"]["format"], "fabricGitSource")
+            self.assertEqual(len(body["definition"]["parts"]), 1)
+            self.assertEqual(body["definition"]["parts"][0]["path"], "notebook-content.py")
+        rerun = deploy.build_notebook_plan(self.client, self.config)
+        self.assertTrue(all(n["action"] == "reuse" for n in rerun["notebooks"]))
+        deploy.apply_plan(self.client, self.config, rerun, rerun["approval_id"], self.directory / "rerun.json", "notebooks")
+        self.assertEqual(len(self.client.posts), 3)
+
+    def test_notebook_collision_and_drift_do_not_overwrite(self):
+        self.client.items.append({"id": LAKES["bronze"], "displayName": "POC_NB_VEHICLE_USAGE", "type": "Report"})
+        with self.assertRaisesRegex(deploy.DeploymentError, "different item type"):
+            deploy.build_notebook_plan(self.client, self.config)
+        self.client = FakeNotebookFabric()
+        plan = deploy.build_notebook_plan(self.client, self.config)
+        deploy.apply_plan(self.client, self.config, plan, plan["approval_id"], self.directory / "journal.json", "notebooks")
+        notebook_id = next(iter(self.client.definitions))
+        part = self.client.definitions[notebook_id]["parts"][0]
+        source = base64.b64decode(part["payload"]).decode()
+        part["payload"] = base64.b64encode((source + "\nchanged_value = 1\n").encode()).decode()
+        with self.assertRaisesRegex(deploy.DeploymentError, "differs"):
+            deploy.build_notebook_plan(self.client, self.config)
+        self.assertEqual(len(self.client.posts), 3)
+
+    def test_changed_local_source_invalidates_approval(self):
+        plan = deploy.build_notebook_plan(self.client, self.config)
+        name = next(iter(deploy.NOTEBOOKS))
+        for current in deploy.NOTEBOOKS:
+            path = self.directory / f"{current}.Notebook"
+            path.mkdir()
+            original = (ROOT / f"{current}.Notebook" / "notebook-content.py").read_text()
+            suffix = "\n# source revision\n" if current == name else ""
+            (path / "notebook-content.py").write_text(original + suffix)
+        with patch.object(deploy, "ROOT", self.directory):
+            with self.assertRaises(deploy.DeploymentError):
+                deploy.apply_plan(self.client, self.config, plan, plan["approval_id"], self.directory / "journal.json", "notebooks")
+        self.assertEqual(self.client.posts, [])
+
+    def test_readback_failure_records_created_notebook_and_stops(self):
+        plan = deploy.build_notebook_plan(self.client, self.config)
+        original = self.client.definition
+
+        def incorrect(workspace_id, notebook_id):
+            result = original(workspace_id, notebook_id)
+            source = deploy.definition_source(result).replace("silver_target01", "silver_wrong")
+            return {"parts": [{"path": "notebook-content.py", "payloadType": "InlineBase64",
+                               "payload": base64.b64encode(source.encode()).decode()}]}
+
+        with patch.object(self.client, "definition", side_effect=incorrect):
+            with self.assertRaisesRegex(deploy.DeploymentError, "readback differs"):
+                deploy.apply_plan(
+                    self.client, self.config, plan, plan["approval_id"], self.directory / "journal.json", "notebooks",
+                )
+        journal = json.loads((self.directory / "journal.json").read_text())
+        self.assertEqual(journal["status"], "failed")
+        self.assertEqual(len(journal["notebooks"]), 1)
+        self.assertFalse(next(iter(journal["notebooks"].values()))["verified"])
+        self.assertEqual(len(self.client.posts), 1)
+
+    def test_signature_preserves_magic_cell_order_and_ignores_quote_formatting(self):
+        resources = deploy.build_plan(self.client, self.config)
+        source, _ = deploy.render_notebook("POC_NB_VEHICLE_USAGE", self.config, resources)
+        signature = deploy.notebook_signature(source)
+        self.assertEqual(signature, deploy.notebook_signature(source.replace("'Target_Model'", '"Target_Model"')))
+        self.assertNotEqual(signature, deploy.notebook_signature(source.replace('"numCores": 2', '"numCores": 4')))
+        self.assertNotEqual(signature, deploy.notebook_signature(source.replace("mode = 'train'", "mode = 'profile'")))
+        self.assertNotEqual(signature, deploy.notebook_signature(source.replace("# PARAMETERS CELL", "# CELL")))
+
+
 if __name__ == "__main__":
     unittest.main()
+import base64

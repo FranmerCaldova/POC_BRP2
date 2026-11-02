@@ -181,7 +181,9 @@ def build_plan(client, config):
     items = client.list(f"/workspaces/{workspace['id']}/items") if workspace else []
     lakes = {}
     for role, name in sorted(config["lakehouses"].items()):
-        item = unique_named(items, name)
+        item = unique_named([i for i in items if i.get("type") != "SQLEndpoint"], name)
+        if not item and any(i["displayName"].casefold() == name.casefold() for i in items):
+            raise DeploymentError(f"A SQL endpoint exists without a matching lakehouse: {name}.")
         if item:
             if item.get("type") != "Lakehouse":
                 raise DeploymentError(f"Name is occupied by a non-lakehouse item: {name}.")

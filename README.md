@@ -42,6 +42,8 @@ The original BRP2 workspace ID and names BRP/BRP2 are protected. A workspace
 name collision is rejected unless its exact `workspace_id` is explicitly added
 to configuration. Existing lakehouses are reused only if type and schema support
 can be verified. No update, overwrite or delete API is implemented. A rerun
+recognizes the same-name SQL endpoints automatically created alongside lakehouses.
+An endpoint without its matching lakehouse remains a blocking collision. A rerun
 can be a no-op after explicitly selecting the existing workspace and approving
 a new plan; it is not an all-or-nothing transaction.
 

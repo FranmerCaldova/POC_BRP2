@@ -163,10 +163,21 @@ class DeploymentTest(unittest.TestCase):
         self.assertTrue(all(body["creationPayload"]["enableSchemas"] for _, body in self.client.posts[1:]))
         self.assertEqual(json.loads(journal_path.read_text()), journal)
         self.config["workspace_id"] = WORKSPACE
+        self.client.items.extend([
+            {"id": "endpoint-" + role, "displayName": f"BRP_{role.upper()}", "type": "SQLEndpoint"}
+            for role in LAKES
+        ])
         rerun = deploy.build_plan(self.client, self.config)
         self.assertTrue(all(v["action"] == "reuse" for v in rerun["lakehouses"].values()))
         deploy.apply_plan(self.client, self.config, rerun, rerun["approval_id"], self.directory / "rerun.json")
         self.assertEqual(len(self.client.posts), 4)
+
+    def test_sql_endpoint_without_lakehouse_is_a_collision(self):
+        self.client.workspaces = [{"id": WORKSPACE, "displayName": self.config["workspace_name"]}]
+        self.config["workspace_id"] = WORKSPACE
+        self.client.items = [{"id": LAKES["bronze"], "displayName": "BRP_BRONZE", "type": "SQLEndpoint"}]
+        with self.assertRaisesRegex(deploy.DeploymentError, "without a matching lakehouse"):
+            deploy.build_plan(self.client, self.config)
 
     def test_failure_retains_created_ids_and_does_not_retry_posts(self):
         plan = deploy.build_plan(self.client, self.config)

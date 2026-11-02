@@ -12,5 +12,8 @@
     "snapshot_date": "2026-08-28",
     "experiment_name": "BRP_MILEAGE_EXPERIMENT",
     "model_name": "BRP_MILEAGE_MODEL"
+  },
+  "processing": {
+    "allow_table_overwrite": false
   }
 }

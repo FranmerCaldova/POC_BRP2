@@ -65,8 +65,9 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class FabricClient:
-    def __init__(self, tenant_id):
+    def __init__(self, tenant_id, skill="powerbi-report-management"):
         self.tenant_id = tenant_id
+        self.skill = skill
         self.opener = urllib.request.build_opener(NoRedirect())
 
     def request(self, method, path, body=None):
@@ -80,6 +81,7 @@ class FabricClient:
             data=None if body is None else json.dumps(body).encode("utf-8"),
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         )
+        request.add_header("x-ms-fabric-skill", self.skill)
         try:
             with self.opener.open(request, timeout=120) as response:
                 data = response.read()
@@ -151,7 +153,7 @@ def guid(value):
 def load_config(path):
     config = json.loads(path.read_text(encoding="utf-8"))
     required = {"tenant_id", "capacity_id", "workspace_name", "lakehouses"}
-    if not required <= set(config) or set(config) - required - {"workspace_id", "notebook_parameters"}:
+    if not required <= set(config) or set(config) - required - {"workspace_id", "notebook_parameters", "processing"}:
         raise DeploymentError("Configuration requires tenant_id, capacity_id, workspace_name, lakehouses; optional workspace_id and notebook_parameters.")
     for key in ["tenant_id", "capacity_id"]:
         guid(config[key])
@@ -173,6 +175,10 @@ def load_config(path):
         raise DeploymentError("Use three distinct lakehouse names.")
     if "notebook_parameters" in config:
         validate_notebook_parameters(config["notebook_parameters"])
+    processing = config.get("processing", {})
+    if (not isinstance(processing, dict) or set(processing) - {"allow_table_overwrite"}
+            or type(processing.get("allow_table_overwrite", False)) is not bool):
+        raise DeploymentError("processing only accepts allow_table_overwrite as a boolean.")
     return config
 
 
@@ -366,7 +372,7 @@ def definition_source(definition):
     return base64.b64decode(parts[0]["payload"], validate=True).decode("utf-8-sig").replace("\r\n", "\n")
 
 
-def build_notebook_plan(client, config):
+def build_notebook_plan(client, config, *, runtime_parameters=False):
     resources = build_plan(client, config)
     if resources["workspace"]["action"] != "reuse" or any(
         lake["action"] != "reuse" for lake in resources["lakehouses"].values()
@@ -378,13 +384,29 @@ def build_notebook_plan(client, config):
     items = client.list(f"/workspaces/{workspace_id}/items")
     notebooks = []
     for name in NOTEBOOKS:
-        _, planned = render_notebook(name, config, resources)
+        expected, planned = render_notebook(name, config, resources)
         item = unique_named(items, name)
         if item:
             if item.get("type") != "Notebook":
                 raise DeploymentError(f"Notebook name is occupied by a different item type: {name}.")
             actual = definition_source(client.definition(workspace_id, item["id"]))
-            if digest(notebook_signature(actual)) != planned["definition_sha256"]:
+            signature = digest(notebook_signature(actual))
+            compared = actual
+            if runtime_parameters:
+                start, end, defaults = notebook_parameters(actual)
+                parameters = planned["parameters"]
+                fixed = {
+                    "medallion_workspace_id", "bronze_lakehouse_id", "silver_lakehouse_id",
+                    "gold_lakehouse_id", "silver_lakehouse_name", "gold_lakehouse_name", "mode",
+                }
+                if defaults.keys() != parameters.keys() or any(
+                    defaults[key] != parameters[key] for key in fixed & parameters.keys()
+                ):
+                    raise DeploymentError(f"Existing notebook target/default parameter contract differs: {name}.")
+                expected_start, expected_end, _ = notebook_parameters(expected)
+                compared = actual[:start] + expected[expected_start:expected_end] + actual[end:]
+                planned["stored_definition_sha256"] = signature
+            if digest(notebook_signature(compared)) != planned["definition_sha256"]:
                 raise DeploymentError(f"Existing notebook differs: {name}. Automatic overwrite is disabled.")
         notebooks.append({**planned, "id": item["id"] if item else None,
                           "action": "reuse" if item else "create"})

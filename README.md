@@ -2,11 +2,33 @@
 
 Fabric proof of concept for cumulative vehicle mileage estimation, not failure prediction.
 
-## Prompt deployment: step 1 bootstrap
+## Two prompt workflows
+
+Open this repository in VS Code with Copilot agent mode:
+
+- `/brp-deploy <target workspace and active capacity>`:
+  [deployment prompt](.github/prompts/brp-deploy.prompt.md). Creates the isolated
+  workspace, three lakehouses, three notebooks, Direct Lake model and PBIR report
+  definitions, without running jobs or copying source data.
+- Upload the four CSVs below, then `/brp-process`:
+  [processing prompt](.github/prompts/brp-process.prompt.md). Validates inputs,
+  runs Silver -> training -> reporting -> Gold, then refreshes and validates
+  the target Power BI model/report using the available Power BI tools.
+
+These are agent workflows around deterministic plan/apply scripts, not an
+unattended service. Resource creation and notebook processing require reviewed
+approval hashes; model refresh requires an explicit request. Power BI connection
+credentials and browser sign-in can require user intervention. Definition
+deployment, successful processing, live DAX validation and rendered-report
+validation are separate milestones; never infer one from another.
+Data Agent deployment is not included.
+
+## Step 1: bootstrap
 
 The standard-library Python orchestrator in [deployment/deploy.py](deployment/deploy.py)
-implements **workspace/lakehouse bootstrap and notebook import**, not the complete
-solution deployment. The default stage is `bootstrap`. Python 3.10+ and an authenticated Azure CLI are required;
+implements **workspace/lakehouse bootstrap and notebook import**. Separate
+processing and reporting commands are documented below. The default stage is
+`bootstrap`. Python 3.10+ and an authenticated Azure CLI are required;
 there are no additional Python dependencies for this command.
 
 1. Copy [deployment/target.example.json](deployment/target.example.json) to
@@ -61,9 +83,8 @@ to the official HTTPS v1 endpoint, including pagination and operation polling.
 
 For prompt-driven use, the agent should map the user's requested names into
 configuration, invoke `plan`, summarize it, and stop for approval before `apply`.
-Do not treat an instruction in a prompt as proof that a complete BRP deployment
-is implemented. Notebook import is the next stage below; data, execution and
-downstream reporting deployment remain later steps.
+Use the subsequent commands for notebook import, reporting definitions and
+processing. A successful bootstrap alone does not validate those stages.
 
 API references:
 [Create workspace](https://learn.microsoft.com/en-us/rest/api/fabric/core/workspaces/create-workspace),
@@ -127,6 +148,104 @@ not implemented by this stage and are not validated merely by successful import.
 
 API reference:
 [Notebook definitions](https://learn.microsoft.com/en-us/rest/api/fabric/articles/item-management/definitions/notebook-definition).
+
+## Step 3: deploy Power BI definitions
+
+[deployment/reporting.py](deployment/reporting.py) renders all checked-in TMDL
+and PBIR parts in memory. It remaps the shared OneLake URL, configured Gold
+schema and report's `byConnection` semantic-model ID without modifying source
+files or visuals. It does not refresh data or run notebooks.
+
+```powershell
+python -B .\deployment\reporting.py plan --config .\.deployment\target.json --plan .\.deployment\reporting-plan.json
+python -B .\deployment\reporting.py apply --config .\.deployment\target.json --plan .\.deployment\reporting-plan.json --approve "<approval_id>" --journal .\.deployment\reporting-01.json
+```
+
+The model is created first, then the report binds to its resolved ID.
+Definitions are retrieved after creation; model tables/columns/measures are
+checked against report field bindings. Matching definitions are reused;
+differing items and name/type collisions block deployment. Server readback
+differences are preserved locally beside the journal for diagnosis, not
+silently accepted. No overwrite/delete is implemented.
+
+An empty deployment is metadata-only: no report data can appear until Gold
+tables exist and the model has been successfully refreshed/framed. Do not
+introduce placeholder data to bypass a metadata-deployment error.
+
+## Step 4: upload CSVs and process
+
+Upload these files into Bronze
+`Files/FAIL_RATES_PREDICTION_SANITIZED_DATASETS/`
+(or the configured `source_directory`), not the lakehouse root:
+
+- `SANITIZED_RAW_CLAIMS.csv`
+- `SANITIZED_RAW_VEHICLE_DATA.csv`
+- `SANITIZED_RAW_MODEL_FAMILY.csv`
+- `SANITIZED_RAW_FLEET_OBSERVATIONS.csv`
+
+**No Bronze Delta tables are required.** Silver reads the fleet-observation
+and model-family CSVs directly. The other two files are present for the wider
+scenario but are not consumed by this mileage feature-preparation notebook.
+
+Set a fresh `notebook_parameters.run_prefix` and the intended `snapshot_date`.
+[deployment/process.py](deployment/process.py) passes all parameters at runtime:
+changing the prefix does not require updating notebook definitions. It still
+checks the algorithm, cell order, kernels, target attachments and fixed target
+IDs. Stored defaults and runtime parameters are both bound into plan approval.
+
+```powershell
+python -B .\deployment\process.py plan --config .\.deployment\target.json --plan .\.deployment\processing-plan.json
+python -B .\deployment\process.py run --config .\.deployment\target.json --plan .\.deployment\processing-plan.json --approve "<approval_id>" --journal .\.deployment\processing-01.json
+```
+
+Preflight checks nonempty files, required CSV headers, source sizes/ETags,
+unused run folders and existing target tables. It rechecks immediately before
+execution; it does not freeze uploaded files or validate every row. Do not
+modify input files while processing. Full business/data validation remains in
+the notebooks.
+
+The four jobs run strictly in order:
+
+1. Silver preparation (Spark), including managed Silver Delta and exported data.
+2. ML training (Jupyter, two cores), evaluation, registration and reload verification.
+3. ML reporting (Jupyter, two cores), reusing the exact registered model version.
+4. Gold publication (Spark), creating six reporting Delta tables.
+
+Each job must complete and provide matching workspace/run/model evidence before
+the next starts. Existing Silver/Gold tables are blocked by default. To replace
+them, explicitly approve that operation, add
+`"processing": {"allow_table_overwrite": true}` to local configuration, then
+generate/review a fresh plan naming the affected tables. Output folders are
+never replayed even with that option. A fresh prefix is always required.
+
+Training incurs compute and creates an experiment/model/version. Table
+publication is sequential, **not atomic**: a failure can leave partial writes.
+The journal preserves accepted job handles and evidence; timeout does not cancel
+the job. Inspect its actual status before recovery, never blindly resubmit.
+Use new plan/journal paths for subsequent attempts.
+
+Finally follow `/brp-process` to refresh/frame the target Direct Lake model,
+compare live DAX counts/metrics/lineage with the journal, verify the report's
+model binding and inspect all report pages. Credential failures require
+connection configuration in Power BI Service; no automatic credential workaround
+is implemented. A processing journal marked `succeeded` covers notebook
+processing only, not Power BI refresh or visual validation.
+
+When modeling tools are unavailable, the standard-library REST fallback is:
+
+```powershell
+python -B .\deployment\reporting.py validate --config .\.deployment\target.json --processing-journal .\.deployment\processing-01.json --reporting-journal .\.deployment\reporting-01.json --journal .\.deployment\powerbi-validation-01.json --refresh
+```
+
+Use the actual successful journal paths (including any recovered deployment).
+`--refresh` explicitly requests one enhanced, transactional model refresh with
+zero automatic retries. Its accepted ID is journaled before polling the
+canonical Power BI API; regional Locations are never followed with credentials.
+Without that flag the command is read-only. It first verifies current reporting
+definitions/IDs, then checks report binding, all six live DAX counts, publication
+run/model version and numeric metrics against the successful processing journal.
+This is not visual validation: the output explicitly records
+`visual_validation: "not_performed"`. Open the report separately.
 
 ## Parameterized notebook deployment
 
@@ -233,6 +352,17 @@ python -m unittest discover -s tests -v
 
 Tests execute extracted notebook functions with mocked Fabric services, validate
 syntax and exercise renamed targets, invalid attachments/paths and publication
-lineage. They do not execute the notebooks' top-level training/publication cells.
-An actual Fabric run in a separate workspace remains required to validate
-Spark catalog resolution, permissions, MLflow and target data end to end.
+lineage. Orchestrator tests cover source preflight, fresh runtime run IDs,
+overwrite refusal, sequential job failure, model/report rendering and reuse,
+binding checks, refresh failure handling and live-data comparisons. They do not
+execute notebooks' top-level training/publication cells.
+
+The workflow was also exercised in an isolated F16 workspace: model metadata
+was created before the first Gold publication; all four notebook jobs completed;
+six Gold tables, registered-model lineage, Direct Lake refresh, report binding,
+row counts and metrics were verified through live APIs/DAX. This smoke test is
+not a guarantee of other tenants' permissions, capacity/runtime availability or
+data quality. Browser visual validation still requires an authenticated Fabric
+session. The PBIR validator reported zero errors and a warning that the
+referenced visualContainer schema could not be fetched; that portion of schema
+validation is therefore incomplete.

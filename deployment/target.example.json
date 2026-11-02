@@ -1,0 +1,10 @@
+{
+  "tenant_id": "00000000-0000-0000-0000-000000000001",
+  "capacity_id": "00000000-0000-0000-0000-000000000002",
+  "workspace_name": "BRP_PROMPT_TEST",
+  "lakehouses": {
+    "bronze": "BRP_RAW",
+    "silver": "BRP_CLEAN",
+    "gold": "BRP_RESULTS"
+  }
+}

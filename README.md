@@ -2,6 +2,70 @@
 
 Fabric proof of concept for cumulative vehicle mileage estimation, not failure prediction.
 
+## Prompt deployment: step 1 bootstrap
+
+The standard-library Python orchestrator in [deployment/deploy.py](deployment/deploy.py)
+implements **only workspace/lakehouse planning and bootstrap**, not the complete
+solution deployment. Python 3.10+ and an authenticated Azure CLI are required;
+there are no additional Python dependencies for this command.
+
+1. Copy [deployment/target.example.json](deployment/target.example.json) to
+   `.deployment/target.json` and enter the actual tenant and active capacity IDs.
+2. Authenticate with `az login --tenant <target-tenant-id> --allow-no-subscriptions`.
+3. Generate a read-only plan from the repository root:
+
+```powershell
+python -B .\deployment\deploy.py plan --config .\.deployment\target.json --plan .\.deployment\plan.json
+```
+
+Review the resolved capacity, target names, create/reuse actions and limitations.
+The plan uses GET requests only. Being able to list a capacity/workspace does
+**not** prove create/assignment permissions. Workspace creators need permission
+to create workspaces and assign the selected capacity; existing workspace
+access must permit item creation.
+
+Only after explicit approval, copy the exact `approval_id` into:
+
+```powershell
+python -B .\deployment\deploy.py apply --config .\.deployment\target.json --plan .\.deployment\plan.json --approve "<approval_id>" --journal .\.deployment\bootstrap-01.json
+```
+
+`apply` rediscovers the target and rejects a changed plan before any write.
+It creates the workspace on the selected existing capacity and three
+schema-enabled lakehouses, then verifies their IDs, names and schema support.
+It does not provision/resume capacities, change an existing workspace's capacity,
+copy data, import/run notebooks, train models, or deploy Power BI/Data Agent items.
+Schema-enabled lakehouse creation currently uses the API's preview
+`creationPayload.enableSchemas` option; tenant support must be verified by apply.
+
+The original BRP2 workspace ID and names BRP/BRP2 are protected. A workspace
+name collision is rejected unless its exact `workspace_id` is explicitly added
+to configuration. Existing lakehouses are reused only if type and schema support
+can be verified. No update, overwrite or delete API is implemented. A rerun
+can be a no-op after explicitly selecting the existing workspace and approving
+a new plan; it is not an all-or-nothing transaction.
+
+The local journal records pending operations and resolved IDs after each write.
+If creation times out or fails, inspect the journal AND Fabric: a request may
+have succeeded even if its response was lost. There is no automatic rollback,
+blind POST retry or deletion. For recovery, add the verified workspace ID to
+configuration, generate a fresh plan, review existing resources, then use a new
+journal. Partial resources remain visible rather than being silently removed.
+
+Local configuration, plans and journals belong in ignored `.deployment/`, never
+in the public repository. Tokens are obtained from Azure CLI at request time,
+remain in memory and are not written to these files. Fabric URLs are restricted
+to the official HTTPS v1 endpoint, including pagination and operation polling.
+
+For prompt-driven use, the agent should map the user's requested names into
+configuration, invoke `plan`, summarize it, and stop for approval before `apply`.
+Do not treat an instruction in a prompt as proof that a complete BRP deployment
+is implemented. Notebook/dependency remapping and end-to-end execution are later steps.
+
+API references:
+[Create workspace](https://learn.microsoft.com/en-us/rest/api/fabric/core/workspaces/create-workspace),
+[Create lakehouse](https://learn.microsoft.com/en-us/rest/api/fabric/lakehouse/items/create-lakehouse).
+
 ## Parameterized notebook deployment
 
 Each notebook has a Fabric **parameters cell**. A deployment agent must resolve

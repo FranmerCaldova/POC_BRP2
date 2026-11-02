@@ -54,6 +54,11 @@ medallion_workspace_id = "f78fd47f-e385-4179-b31a-5e376322c392"
 silver_lakehouse_id = "e7f40075-4dc5-4241-90b8-9b5a6af22ea4"
 gold_lakehouse_id = "fbb63bb5-9be9-413e-98f8-5483d1552137"
 silver_run_id = "silver_final_20261016"
+silver_directory = "POC_silver"
+results_directory = "POC_vehicle_usage"
+errors_directory = "POC_vehicle_usage_errors"
+experiment_name = "POC_EXP_VEHICLE_USAGE"
+model_name = "POC_ML_VEHICLE_USAGE"
 mode = "train"
 
 
@@ -97,8 +102,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
 
-EXPERIMENT = "POC_EXP_VEHICLE_USAGE"
-MODEL = "POC_ML_VEHICLE_USAGE"
+EXPERIMENT = experiment_name
+MODEL = model_name
 FEATURES = ["age_days", "model_year", "product_line", "PLANT", "FLEET_REGION"]
 
 
@@ -231,9 +236,7 @@ def run_demo(demo_run_id: str, snapshot: str, source_directory: str, mode: str) 
         raise ValueError("snapshot must be YYYY-MM-DD.")
     pd.Timestamp(snapshot)
     base = Path("/lakehouse/default/Files")
-    if source_directory != "FAIL_RATES_PREDICTION_SANITIZED_DATASETS":
-        raise ValueError("Only the inventoried client source directory is allowed.")
-    output = base / "POC_vehicle_usage" / demo_run_id
+    output = base / results_directory / demo_run_id
     if output.exists():
         raise FileExistsError("Run output already exists; use a new demo_run_id.")
     data, profile = load_silver_features(snapshot)
@@ -254,6 +257,7 @@ def run_demo(demo_run_id: str, snapshot: str, source_directory: str, mode: str) 
             "min_samples_leaf": 30, "sampling_row_limit": 100000,
             "target": "observed cumulative mileage at measurement date",
             "silver_run_id": silver_run_id, "silver_lakehouse_id": silver_lakehouse_id,
+            "workspace_id": medallion_workspace_id,
         })
         model.fit(train[FEATURES], train["target_km"])
         estimates = model.predict(test[FEATURES])
@@ -330,6 +334,8 @@ def run_demo(demo_run_id: str, snapshot: str, source_directory: str, mode: str) 
             "prediction_rows": len(predictions), "profile": profile,
             "silver_run_id": silver_run_id, "silver_lakehouse_id": silver_lakehouse_id,
             "gold_lakehouse_id": gold_lakehouse_id,
+            "workspace_id": medallion_workspace_id,
+            "silver_directory": silver_directory, "results_directory": results_directory,
             "elapsed_seconds": round(time.monotonic() - started, 2),
             "versions": {
                 package: importlib.metadata.version(package)
@@ -366,11 +372,40 @@ import notebookutils
 import requests
 
 
+def validate_deployment() -> None:
+    from uuid import UUID
+
+    for value in [medallion_workspace_id, silver_lakehouse_id, gold_lakehouse_id]:
+        UUID(value)
+    if silver_lakehouse_id == gold_lakehouse_id:
+        raise ValueError("Silver and Gold must be different lakehouses.")
+    context = notebookutils.runtime.context
+    if (context["currentWorkspaceId"] != medallion_workspace_id
+            or context["defaultLakehouseWorkspaceId"] != medallion_workspace_id
+            or context["defaultLakehouseId"] != gold_lakehouse_id):
+        raise ValueError("Attach the target Gold lakehouse and run in the target workspace.")
+    for value in [source_directory, silver_directory, results_directory, errors_directory]:
+        if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*", value):
+            raise ValueError("File directories must be safe relative paths below Files.")
+    if (results_directory == errors_directory
+            or results_directory.startswith(errors_directory + "/")
+            or errors_directory.startswith(results_directory + "/")):
+        raise ValueError("Result and error directories must not overlap.")
+    for value in [experiment_name, model_name]:
+        if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value):
+            raise ValueError("Use simple nonempty experiment and model names.")
+    if mode not in {"profile", "train", "reporting"}:
+        raise ValueError("mode must be profile, train or reporting.")
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", snapshot_date):
+        raise ValueError("snapshot_date must be YYYY-MM-DD.")
+    pd.Timestamp(snapshot_date)
+
+
 def load_silver_features(snapshot: str) -> tuple[pd.DataFrame, dict]:
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", silver_run_id):
         raise ValueError("Invalid Silver publication identifier.")
     root = (f"https://onelake.dfs.fabric.microsoft.com/{medallion_workspace_id}/"
-            f"{silver_lakehouse_id}/Files/POC_silver/{silver_run_id}")
+            f"{silver_lakehouse_id}/Files/{silver_directory}/{silver_run_id}")
     token = notebookutils.credentials.getToken("storage")
     headers = {"Authorization": f"Bearer {token}"}
     response = requests.get(root + "/published.json", headers=headers, timeout=120, allow_redirects=False)
@@ -378,6 +413,10 @@ def load_silver_features(snapshot: str) -> tuple[pd.DataFrame, dict]:
     evidence = response.json()
     if evidence["status"] != "published" or evidence["snapshot_date"] != snapshot:
         raise ValueError("Silver snapshot is not published or does not match.")
+    if evidence["silver_lakehouse_id"] != silver_lakehouse_id or evidence["silver_run_id"] != silver_run_id:
+        raise ValueError("Silver publication identity does not match.")
+    if "workspace_id" in evidence and evidence["workspace_id"] != medallion_workspace_id:
+        raise ValueError("Silver publication belongs to another workspace.")
     response = requests.get(root + "/observations.parquet", headers=headers, timeout=120, allow_redirects=False)
     response.raise_for_status()
     if hashlib.sha256(response.content).hexdigest() != evidence["export_sha256"]:
@@ -410,17 +449,29 @@ def prepare_reporting(report_run_id: str, source_run_id: str) -> dict:
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", value):
             raise ValueError("Invalid reporting/source run identifier.")
     base = Path("/lakehouse/default/Files")
-    source = base / "POC_vehicle_usage" / source_run_id
+    source = base / results_directory / source_run_id
     summary = json.loads((source / "summary.json").read_text("utf-8"))
     if summary["status"] != "passed" or summary["demo_run_id"] != source_run_id:
         raise ValueError("Only a validated source execution can be published.")
-    output = base / "POC_vehicle_usage" / report_run_id
+    output = base / results_directory / report_run_id
     if output.exists():
         raise FileExistsError("Reporting candidate exists; use another run identifier.")
     if (summary["silver_run_id"] != silver_run_id
             or summary["silver_lakehouse_id"] != silver_lakehouse_id
             or summary["gold_lakehouse_id"] != gold_lakehouse_id):
         raise ValueError("Training and reporting must consume the same Silver publication and Gold target.")
+    if summary["model_name"] != MODEL or summary["experiment_name"] != EXPERIMENT:
+        raise ValueError("Training and reporting must use the same model and experiment.")
+    if summary["registered_model_uri"] != f"models:/{MODEL}/{summary['model_version']}":
+        raise ValueError("Registered model URI does not match the recorded model version.")
+    if summary["snapshot_date"] != snapshot_date:
+        raise ValueError("Reporting snapshot differs from the training snapshot.")
+    for key, expected in [
+        ("workspace_id", medallion_workspace_id),
+        ("silver_directory", silver_directory), ("results_directory", results_directory),
+    ]:
+        if key in summary and summary[key] != expected:
+            raise ValueError(f"Training and reporting disagree on {key}.")
     data, profile = load_silver_features(summary["snapshot_date"])
     if profile != summary["profile"]:
         raise ValueError("Source profile changed; do not mix current sources with an older model result.")
@@ -538,6 +589,10 @@ def prepare_reporting(report_run_id: str, source_run_id: str) -> dict:
         "source_run_id": source_run_id, "model_version": summary["model_version"],
         "silver_run_id": silver_run_id, "silver_lakehouse_id": silver_lakehouse_id,
         "gold_lakehouse_id": gold_lakehouse_id,
+        "workspace_id": medallion_workspace_id,
+        "model_name": MODEL, "experiment_name": EXPERIMENT,
+        "snapshot_date": summary["snapshot_date"],
+        "results_directory": results_directory,
         "table_rows": {name: len(frame) for name, frame in tables.items()},
         "expected_global": summary["metrics"],
         "expected_by_segment": expected_by_segment,
@@ -564,6 +619,7 @@ def prepare_reporting(report_run_id: str, source_run_id: str) -> dict:
 # CELL ********************
 
 from datetime import datetime, timezone
+validate_deployment()
 demo_run_id = demo_run_id or datetime.now(timezone.utc).strftime('demo_%Y%m%dT%H%M%S%fZ')
 try:
     demo_result = (prepare_reporting(demo_run_id, report_source_run_id)
@@ -571,7 +627,7 @@ try:
                    run_demo(demo_run_id, snapshot_date, source_directory, mode))
 except (ValueError, OSError, KeyError, TypeError, RuntimeError, AssertionError,
         mlflow.exceptions.MlflowException) as error:
-    error_directory = Path('/lakehouse/default/Files/POC_vehicle_usage_errors')
+    error_directory = Path("/lakehouse/default/Files") / errors_directory
     error_directory.mkdir(parents=True, exist_ok=True)
     (error_directory / 'last_error.json').write_text(
         json.dumps({'demo_run_id': demo_run_id, 'error_type': type(error).__name__, 'message': str(error)}), encoding='utf-8')
@@ -588,7 +644,7 @@ except (ValueError, OSError, KeyError, TypeError, RuntimeError, AssertionError,
 # MARKDOWN ********************
 
 # ## 3. Read the result
-# MAE is in kilometres; lower is better. The baseline is a reference, not an accuracy target. Predictions are stored as Parquet under Files/POC_vehicle_usage, not as a managed SQL table.
+# MAE is in kilometres; lower is better. The baseline is a reference, not an accuracy target. Predictions are stored as Parquet under Files/<results_directory>, not as a managed SQL table.
 
 
 # CELL ********************

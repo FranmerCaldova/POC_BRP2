@@ -31,7 +31,12 @@
 # PARAMETERS CELL ********************
 
 medallion_workspace_id = "f78fd47f-e385-4179-b31a-5e376322c392"
+bronze_lakehouse_id = "9d167aeb-04db-4690-939d-7e296550dbc9"
 silver_lakehouse_id = "e7f40075-4dc5-4241-90b8-9b5a6af22ea4"
+silver_lakehouse_name = "POC_LH_VEHICLE_USAGE_SILVER"
+source_directory = "FAIL_RATES_PREDICTION_SANITIZED_DATASETS"
+silver_directory = "POC_silver"
+silver_schema = "POC_silver"
 silver_run_id = "silver_final_20261016"
 snapshot_date = "2026-08-28"
 
@@ -172,16 +177,40 @@ from pyspark.sql import functions as F
 import notebookutils
 
 
+def validate_deployment() -> None:
+    from uuid import UUID
+
+    for value in [medallion_workspace_id, bronze_lakehouse_id, silver_lakehouse_id]:
+        UUID(value)
+    if bronze_lakehouse_id == silver_lakehouse_id:
+        raise ValueError("Bronze and Silver must be different lakehouses.")
+    context = notebookutils.runtime.context
+    if (context["currentWorkspaceId"] != medallion_workspace_id
+            or context["defaultLakehouseWorkspaceId"] != medallion_workspace_id
+            or context["defaultLakehouseId"] != bronze_lakehouse_id):
+        raise ValueError("Attach the target Bronze lakehouse and run in the target workspace.")
+    if notebookutils.lakehouse.get(silver_lakehouse_name, medallion_workspace_id)["id"] != silver_lakehouse_id:
+        raise ValueError("Silver lakehouse name and ID do not match.")
+    for value in [source_directory, silver_directory]:
+        if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*", value):
+            raise ValueError("File directories must be safe relative paths below Files.")
+    for value in [silver_lakehouse_name, silver_schema]:
+        if not isinstance(value, str) or not value.strip() or "`" in value or any(ord(c) < 32 for c in value):
+            raise ValueError("Invalid Silver lakehouse or schema name.")
+    pd.Timestamp(snapshot_date)
+
+
 def prepare_silver() -> dict:
+    validate_deployment()
     started = time.monotonic()
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", silver_run_id):
         raise ValueError("Invalid Silver publication identifier.")
     root = (f"abfss://{medallion_workspace_id}@onelake.dfs.fabric.microsoft.com/"
             f"{silver_lakehouse_id}")
-    published = f"{root}/Files/POC_silver/{silver_run_id}"
+    published = f"{root}/Files/{silver_directory}/{silver_run_id}"
     if notebookutils.fs.exists(published):
         raise FileExistsError("Silver execution already exists; choose another identifier.")
-    source = Path("/lakehouse/default/Files/FAIL_RATES_PREDICTION_SANITIZED_DATASETS")
+    source = Path("/lakehouse/default/Files") / source_directory
     full, _ = prepare_features(source, snapshot_date, sample_limit=None)
     sample, profile = prepare_features(source, snapshot_date)
     pd.testing.assert_frame_equal(full.head(100000), sample)
@@ -191,8 +220,9 @@ def prepare_silver() -> dict:
     full.loc[full["sampling_key"].isin(train["sampling_key"]), "evaluation_role"] = "train"
     full.loc[full["sampling_key"].isin(test["sampling_key"]), "evaluation_role"] = "test"
     spark = SparkSession.builder.getOrCreate()
-    qualified = "`POC_LH_VEHICLE_USAGE_SILVER`.`POC_silver`.`poc_observations`"
-    spark.sql("CREATE SCHEMA IF NOT EXISTS `POC_LH_VEHICLE_USAGE_SILVER`.`POC_silver`")
+    namespace = f"`{silver_lakehouse_name}`.`{silver_schema}`"
+    qualified = f"{namespace}.`poc_observations`"
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {namespace}")
     with tempfile.TemporaryDirectory() as temporary:
         local = Path(temporary) / "observations.parquet"
         full.to_parquet(local, index=False, coerce_timestamps="us")
@@ -220,6 +250,8 @@ def prepare_silver() -> dict:
         notebookutils.fs.cp(local.as_uri(), published + "/observations.parquet")
     result = {
         "status": "published", "silver_run_id": silver_run_id, "snapshot_date": snapshot_date,
+        "workspace_id": medallion_workspace_id, "bronze_lakehouse_id": bronze_lakehouse_id,
+        "source_directory": source_directory, "silver_directory": silver_directory,
         "silver_lakehouse_id": silver_lakehouse_id, "eligible_rows": len(full),
         "sample_profile": profile, "roles": roles, "export_sha256": digest,
         "delta_table": qualified, "client_sources_modified": False,
